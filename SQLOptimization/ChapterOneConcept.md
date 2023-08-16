@@ -1,4 +1,4 @@
-![image](https://github.com/apprentice1012/SQL/assets/126549223/9c11471f-3ce2-402e-984f-64e99af8dea3)# 基数(CARDINALITY)
+# 基数
 
 &emsp;&emsp;某个列唯一键(Distinct_key)的数量叫做基数。比如性别列，只有男女之分，所以这一列基数就是2.主键列的基数等于的总行数。基数的高低影响列的数据分布。</br>
 
@@ -93,6 +93,8 @@ where o.obj = u.obj
 &emsp;&emsp;整合全部sql如下：
 
 ```SQL
+第一个脚本:针对选择性进行SQL优化
+
 select owner,
   column_name,
   num_rows,
@@ -132,8 +134,53 @@ where selectivity >= 20
 ```SQL
   for all columns size 1---对所有列都不收集直方图信息
 ```
-&emsp;&emsp;之前的例子中owner列的基数很低，仍然用它来做示例，发现无论owner中的数据是什么在CBO中都展示的2499条，主打一个公平。这是因为没有收集直方图信息的时候CBO默认是均衡的。所以说执行计划中的CBO是假的，执行计划中的Rows是通过统计信息和一些数学公式计算得来的。**在做SQL优化的时候经常需要帮助执行计划CBO计算出比较准确的Rows，之所以说较为精确是因为CBO是无法获得最精确的值，在对表进行数据统计的时候，统计信息一般不会按照100%来统计，即使按照100%来统计但是表中的数据是动态的，另外计算Rows的数学公式目前也是有缺陷的，故而无法获得精确值。如果Rows每次都能获得精确值，我们就只需要关注业务逻辑，表设计，SQL写法以及如何建立索引，不需要担心CBO执行错误计划了。</br>
+&emsp;&emsp;之前的例子中owner列的基数很低，仍然用它来做示例，发现无论owner中的数据是什么在CBO中都展示的2499条，主打一个公平。这是因为没有收集直方图信息的时候CBO默认是均衡的。所以说执行计划中的CBO是假的，执行计划中的Rows是通过统计信息和一些数学公式计算得来的。**在做SQL优化的时候经常需要帮助执行计划CBO计算出比较准确的Rows**，之所以说较为精确是因为CBO是无法获得最精确的值，在对表进行数据统计的时候，统计信息一般不会按照100%来统计，即使按照100%来统计但是表中的数据是动态的，另外计算Rows的数学公式目前也是有缺陷的，故而无法获得精确值。如果Rows每次都能获得精确值，我们就只需要关注业务逻辑，表设计，SQL写法以及如何建立索引，不需要担心CBO执行错误计划了。</br>
 
 &emsp;&emsp;Oracle12c的新功能SQL Plan Directives一定程度解决了Rows估算不准而引发的性能问题。</br>
 
-&emsp;&emsp;为了让CBO能选择正确的执行计划，需要对需要查询的列收集直方图信息，从而告知CBO数据分布是不均衡的，让CBO在计算Rows时参考直方图来计算。
+&emsp;&emsp;为了让CBO能选择正确的执行计划，需要对需要查询的列收集直方图信息，从而告知CBO数据分布是不均衡的，让CBO在计算Rows时参考直方图来计算。</br>
+
+```SQL
+  for column owner size skewonly---对某一列生成直方图
+```
+
+&emsp;&emsp;在生成直方图之后在进行查询CBO的Rows估算基本准确，Rows估算准确那么执行计划就不会有问题了。收集直方图其实就是相当于运行了</br>
+```SQL
+  select owner,count(*) from test group by owner
+```
+&emsp;&emsp;这都是针对基数小数据分布不均匀，如果数据分布均匀则不需要直方图来辅助计算。</br>
+
+&emsp;&emsp;什么样的列需要直方图呢？</br>
+
+&emsp;&emsp;出现在where条件中，并且列的选择性小于1%且没有收集过直方图。千万不要对没有出现在where条件中的列收集直方图，那样纯粹是浪费数据库资源。</br>
+
+```SQL
+第二个脚本:针对直方图进行SQL优化
+
+select a.owner,
+      a.table_name,
+      a.column_name,
+      b.num_rows,
+      b.num_distinct,
+      trunc(num_distinct/num_rows*100,2) selectivity,
+      'NEED GATHER HISTOGRAM' notice
+from dba_tab_col_statistics a,dba_table b
+where a.owner = 'SCOTT'
+  and a.table_name = 'TEST'
+  and a.owner = b.owner
+  and a.table_name = b.table_name
+  and num_distinct/num_rows < 0.01
+  and (a.owner,a.table_name,a.column_name) in
+      (select r.name owner,o.name table_name,c.name column_name
+       from sys.col_user u,sys.obj o,sys_col c,sys.user r
+                      where o.obj = u.obj
+                        and c.obj = u.obj
+                        and c.col = u.intcol
+                        and r,name = 'SCOTT'
+                        and o.name = 'TEST');
+  and a.histogram = 'NONE';
+```
+
+# 回表
+
+&emsp;&emsp;
