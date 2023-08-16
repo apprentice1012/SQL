@@ -1,6 +1,6 @@
 # 基数(CARDINALITY)
 
-&emps;&emps;某个列唯一键(Distinct_key)的数量叫做基数。比如性别列，只有男女之分，所以这一列基数就是2.主键列的基数等于的总行数。基数的高低影响列的数据分布。</br>
+&emsp;&emsp;某个列唯一键(Distinct_key)的数量叫做基数。比如性别列，只有男女之分，所以这一列基数就是2.主键列的基数等于的总行数。基数的高低影响列的数据分布。</br>
 
 ```SQL
   select count(distinct owner),count(distinct object_id),count(*)
